@@ -67,8 +67,20 @@ def _background_scan():
 def index():
     global INDEX
     INDEX = load_cache() or INDEX
-    cats = {k: len(v) for k, v in INDEX.get('categories', {}).items()}
-    return render_template('index.html', categories=cats)
+    # Collect all images and videos for Pinterest-style grid
+    all_files = []
+    for k, v in INDEX.get('categories', {}).items():
+        if k in ('images', 'video'):
+            for f in v:
+                all_files.append({
+                    'path': f['path'],
+                    'thumbnail': f.get('thumbnail'),
+                    'ext': f.get('ext'),
+                    'type': k
+                })
+    # Sort by mtime descending (most recent first)
+    all_files.sort(key=lambda x: os.path.getmtime(x['path']) if os.path.exists(x['path']) else 0, reverse=True)
+    return render_template('index.html', all_files=all_files)
 
 @app.route('/category/<cat>')
 def view_category(cat):

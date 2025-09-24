@@ -10,3 +10,7 @@ wheels/
 .venv
 
 static/thumbnails/
+.env
+file_index.json
+
+.github/
