@@ -11,9 +11,7 @@
     margin-bottom: 16px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.04);
   }
-  #masonryGrid {
-    margin: 0 auto;
-  }
+  #masonryGrid { margin: 0 auto; }
   .masonry-item {
     width: 160px;
     margin-bottom: 16px;
@@ -25,10 +23,7 @@
     box-shadow: 0 2px 8px rgba(0,0,0,0.04);
     padding-bottom: 8px;
   }
-.masonry-item.hidden {
-  display: none !important;
-}
-
+  .masonry-item.hidden { display: none !important; }
   .thumb.lazy-thumb {
     width: 144px;
     height: 144px;
@@ -38,17 +33,31 @@
     background: #f3f3f3;
     display: block;
   }
+  .btn.active { background-color:#0d6efd; color:#fff; border-color:#0d6efd; }
+  /* small debug badge */
+  #filterDebug {
+    position: fixed;
+    right: 12px;
+    top: 80px;
+    background: rgba(0,0,0,0.6);
+    color: #fff;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    z-index: 9999;
+    display: none;
+  }
 </style>
 
 <div class="sticky-filters d-flex justify-content-center gap-3">
-  <button class="btn btn-outline-primary" id="filterAll">All</button>
-  <button class="btn btn-outline-primary" id="filterPhotos">Photos</button>
-  <button class="btn btn-outline-primary" id="filterVideos">Videos</button>
+  <button class="btn btn-outline-primary" id="filterAll" type="button">All</button>
+  <button class="btn btn-outline-primary" id="filterPhotos" type="button">Photos</button>
+  <button class="btn btn-outline-primary" id="filterVideos" type="button">Videos</button>
 </div>
 
 <div id="masonryGrid" class="row" data-masonry='{"itemSelector": ".masonry-item", "columnWidth": 160, "gutter": 16 }'>
   {% for f in all_files %}
-    <div class="masonry-item col" data-type="{{ f.type }}">
+    <div class="masonry-item col" data-type="{{ f.type }}" data-path="{{ f.path }}">
       <a href="{{ url_for('view_file') }}?path={{ f.path }}">
           {% if f.thumbnail %}
             <img class="thumb lazy-thumb" data-src="{{ url_for('thumbnail', thumb_rel=f.thumbnail) }}" alt="Thumbnail" loading="lazy">
@@ -70,58 +79,113 @@
   {% endfor %}
 </div>
 
+<div id="filterDebug"></div>
+
 <script src="https://unpkg.com/masonry-layout@4/dist/masonry.pkgd.min.js"></script>
 <script>
-const filterAll = document.getElementById('filterAll');
-const filterPhotos = document.getElementById('filterPhotos');
-const filterVideos = document.getElementById('filterVideos');
-const masonryGrid = document.getElementById('masonryGrid');
-
-function setActive(btn) {
-  [filterAll, filterPhotos, filterVideos].forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-}
-
-function filter(type) {
-  let changed = false;
-  for (const item of masonryGrid.querySelectorAll('.masonry-item')) {
-    if (type === 'all' || item.dataset.type === type) {
-      if (item.classList.contains('hidden')) {
-        item.classList.remove('hidden');
-        changed = true;
-      }
-    } else {
-      if (!item.classList.contains('hidden')) {
-        item.classList.add('hidden');
-        changed = true;
-      }
-    }
-  }
-  // Only re-layout Masonry if something changed
-  if (changed && window.Masonry && masonryGrid.masonry) {
-    masonryGrid.masonry.layout();
-  }
-}
-
-filterAll.onclick = () => { setActive(filterAll); filter('all'); };
-filterPhotos.onclick = () => { setActive(filterPhotos); filter('images'); };
-filterVideos.onclick = () => { setActive(filterVideos); filter('video'); };
-
-// Default to All
-setActive(filterAll);
-filter('all');
-
-// Initialize Masonry
 document.addEventListener('DOMContentLoaded', function() {
-  masonryGrid.masonry = new Masonry(masonryGrid, {
-    itemSelector: '.masonry-item',
-    columnWidth: 160,
-    gutter: 16,
-    percentPosition: true
-  });
+  // Elements
+  const btnAll = document.getElementById('filterAll');
+  const btnPhotos = document.getElementById('filterPhotos');
+  const btnVideos = document.getElementById('filterVideos');
+  const masonryGrid = document.getElementById('masonryGrid');
+  const debug = document.getElementById('filterDebug');
 
-  // Lazy load thumbnails using Intersection Observer
-  const lazyThumbs = document.querySelectorAll('.lazy-thumb');
+  if (!masonryGrid) {
+    console.error('masonryGrid element not found!');
+    return;
+  }
+
+  // Initialize Masonry
+  let masonryInstance = null;
+  try {
+    masonryInstance = new Masonry(masonryGrid, {
+      itemSelector: '.masonry-item',
+      columnWidth: 160,
+      gutter: 16,
+      percentPosition: true
+    });
+    // attach for other code to check
+    masonryGrid.masonry = masonryInstance;
+  } catch (e) {
+    console.warn('Masonry init failed or not loaded:', e);
+  }
+
+  // Normalize type strings to 'images' or 'video' or 'other'
+  function normalizeType(raw) {
+    if (!raw) return 'other';
+    raw = raw.toString().toLowerCase().trim();
+    // common variants
+    if (raw === 'image' || raw === 'images' || raw.startsWith('image')) return 'images';
+    if (raw === 'photo' || raw === 'photos') return 'images';
+    if (raw === 'video' || raw === 'videos' || raw.startsWith('video')) return 'video';
+    return raw;
+  }
+
+  function countVisible() {
+    const items = masonryGrid.querySelectorAll('.masonry-item');
+    let total = items.length, visible = 0;
+    items.forEach(it => { if (!it.classList.contains('hidden')) visible++; });
+    return { total, visible };
+  }
+
+  // show debug badge briefly
+  function showDebug(msg, timeout=1200) {
+    debug.style.display = 'block';
+    debug.textContent = msg;
+    setTimeout(()=>{ debug.style.display = 'none'; }, timeout);
+  }
+
+  // Filtering logic
+  function doFilter(type) {
+    const items = masonryGrid.querySelectorAll('.masonry-item');
+    let changed = false;
+    items.forEach(item => {
+      const dtRaw = item.dataset.type || item.getAttribute('data-type') || '';
+      const itype = normalizeType(dtRaw);
+      const shouldShow = (type === 'all') || (itype === type);
+      if (shouldShow) {
+        if (item.classList.contains('hidden')) {
+          item.classList.remove('hidden');
+          changed = true;
+        }
+      } else {
+        if (!item.classList.contains('hidden')) {
+          item.classList.add('hidden');
+          changed = true;
+        }
+      }
+    });
+
+    // Force Masonry relayout if present
+    if (masonryGrid.masonry) {
+      // small delay to let DOM changes settle
+      setTimeout(()=>{ masonryGrid.masonry.layout(); }, 60);
+    }
+
+    const c = countVisible();
+    console.debug(`[filter] type=${type} changed=${changed} visible=${c.visible}/${c.total}`);
+    showDebug(`${c.visible}/${c.total}`);
+    return changed;
+  }
+
+  // attach handlers
+  if (btnAll) btnAll.addEventListener('click', ()=>{ setActive(btnAll); doFilter('all'); });
+  if (btnPhotos) btnPhotos.addEventListener('click', ()=>{ setActive(btnPhotos); doFilter('images'); });
+  if (btnVideos) btnVideos.addEventListener('click', ()=>{ setActive(btnVideos); doFilter('video'); });
+
+  function setActive(btn) {
+    [btnAll, btnPhotos, btnVideos].forEach(b => { if (b) b.classList.remove('active'); });
+    if (btn) btn.classList.add('active');
+  }
+
+  // Default state
+  setActive(btnAll);
+  // initially ensure none hidden before layout
+  doFilter('all');
+
+  // Lazy load thumbnails (IntersectionObserver)
+  const lazyThumbs = masonryGrid.querySelectorAll('.lazy-thumb');
   if ('IntersectionObserver' in window) {
     const observer = new IntersectionObserver((entries, obs) => {
       entries.forEach(entry => {
@@ -134,20 +198,24 @@ document.addEventListener('DOMContentLoaded', function() {
           obs.unobserve(img);
         }
       });
-    }, {
-      rootMargin: '100px',
-      threshold: 0.01
-    });
+    }, { rootMargin: '200px', threshold: 0.01 });
     lazyThumbs.forEach(img => observer.observe(img));
   } else {
-    // Fallback for browsers without Intersection Observer
-    lazyThumbs.forEach(img => {
-      if (img.dataset.src) {
-        img.src = img.dataset.src;
-        img.removeAttribute('data-src');
-      }
-    });
+    lazyThumbs.forEach(img => { if (img.dataset.src) { img.src = img.dataset.src; img.removeAttribute('data-src'); } });
   }
+
+  // ensure layout when images load
+  masonryGrid.querySelectorAll('.masonry-item img').forEach(img => {
+    img.addEventListener('load', () => { if (masonryGrid.masonry) masonryGrid.masonry.layout(); });
+  });
+
+  // debug: print initial dataset-types (helps spot mismatches)
+  const typeCounts = {};
+  masonryGrid.querySelectorAll('.masonry-item').forEach(it => {
+    const t = normalizeType(it.dataset.type || it.getAttribute('data-type') || '');
+    typeCounts[t] = (typeCounts[t] || 0) + 1;
+  });
+  console.info('Initial item type counts:', typeCounts);
 });
 </script>
 {% endblock %}

@@ -14,3 +14,4 @@ static/thumbnails/
 file_index.json
 
 .github/
+*.db

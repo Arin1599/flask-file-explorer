@@ -1,52 +1,139 @@
 {% extends "base.html" %}
 {% block content %}
-  <h4>Category: {{ cat|capitalize }}</h4>
+<link rel="stylesheet" href="https://unpkg.com/masonry-layout@4/dist/masonry.pkgd.min.css">
+<style>
+  .controls {
+    display:flex;
+    gap:8px;
+    align-items:center;
+    margin-bottom:12px;
+  }
+  .controls .btn { min-width: 120px; }
+  #catGrid { margin: 0 auto; }
+  .masonry-item {
+    width: 160px;
+    margin-bottom: 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    padding-bottom: 8px;
+  }
+  .masonry-item.hidden { display: none !important; }
+  .thumb.lazy-thumb {
+    width: 144px;
+    height: 144px;
+    object-fit: cover;
+    border-radius: 6px;
+    margin-top: 8px;
+    background: #f3f3f3;
+    display: block;
+  }
+  .file-name { font-size:12px; word-break:break-word; text-align:center; padding:4px 8px; max-width:150px; }
+  .btn.active { background-color:#0d6efd; color:#fff; border-color:#0d6efd; }
+</style>
 
-  {% if cat == 'images' %}
-    <div class="mb-3">
-      <strong>Subcategories:</strong>
-      {% for s, list in subcats.items() %}
-        <a class="btn btn-sm btn-outline-secondary" href="#{{ s }}">{{ s }} ({{ list|length }})</a>
-      {% endfor %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <a href="{{ url_for('index') }}" class="btn btn-sm btn-outline-secondary">← Home</a>
+  </div>
+  <div class="controls">
+    <div class="btn-group" role="group" aria-label="Sort">
+      {% set curr_sort = request.args.get('sort', 'orig_time') %}
+      {% set curr_order = request.args.get('order', 'desc') %}
+      <a href="{{ url_for('view_category', cat=cat, sort='orig_time', order=curr_order) }}" class="btn btn-sm btn-outline-primary {% if curr_sort=='orig_time' %}active{% endif %}">Sort: Original Date</a>
+      <a href="{{ url_for('view_category', cat=cat, sort='mtime', order=curr_order) }}" class="btn btn-sm btn-outline-primary {% if curr_sort=='mtime' %}active{% endif %}">Sort: File MTime</a>
     </div>
-    {% for s, list in subcats.items() %}
-      <h5 id="{{ s }}">{{ s|capitalize }}</h5>
-      <div class="d-flex flex-wrap">
-        {% for f in list %}
-          <div class="file-card">
-            <a href="{{ url_for('view_file') }}?path={{ f.path }}">
-              <img class="thumb" src="{{ url_for('thumbnail', thumb_rel=f.thumbnail) }}" alt="{{ f.name }}">
-            </a>
-            <div style="font-size:12px">{{ f.name }}</div>
-          </div>
-        {% endfor %}
-      </div>
-    {% endfor %}
-  {% else %}
-    <div class="d-flex flex-wrap">
-      {% for f in files %}
-        <div class="file-card">
-          <a href="{{ url_for('view_file') }}?path={{ f.path }}">
-            {% if f.thumbnail %}
-              <img class="thumb" src="{{ url_for('thumbnail', thumb_rel=f.thumbnail) }}" alt="Video thumbnail">
-            {% else %}
-              <img class="thumb" src="https://via.placeholder.com/150?text={{ f.ext }}" alt="Video thumbnail">
-            {% endif %}
+    <div class="btn-group ms-2" role="group" aria-label="Order">
+      <a href="{{ url_for('view_category', cat=cat, sort=curr_sort, order='desc') }}" class="btn btn-sm btn-outline-secondary {% if curr_order!='asc' %}active{% endif %}">Desc</a>
+      <a href="{{ url_for('view_category', cat=cat, sort=curr_sort, order='asc') }}" class="btn btn-sm btn-outline-secondary {% if curr_order=='asc' %}active{% endif %}">Asc</a>
+    </div>
+  </div>
+</div>
+
+<h4 class="mb-2">Category: {{ cat|capitalize }} ({{ files|length }})</h4>
+
+<div id="catGrid" class="row" data-masonry='{"itemSelector": ".masonry-item", "columnWidth": 160, "gutter": 16 }'>
+  {% for f in files %}
+    <div class="masonry-item col" data-path="{{ f.path }}" data-type="{{ f.category }}">
+      <a href="{{ url_for('view_file') }}?path={{ f.path }}">
+        {% if f.thumbnail %}
+          <img class="thumb lazy-thumb" data-src="{{ url_for('thumbnail', thumb_rel=f.thumbnail) }}" alt="{{ f.name|default(f.rel_path) }}" loading="lazy">
+        {% else %}
+          <img class="thumb lazy-thumb" data-src="https://via.placeholder.com/150?text={{ f.ext|urlencode }}" alt="{{ f.name|default(f.rel_path) }}" loading="lazy">
+        {% endif %}
+      </a>
+
+      {% if f.category == 'video' %}
+        <div style="display:flex; gap:8px; align-items:center; margin-top:6px;">
+          <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('view_file') }}?path={{ f.path }}" download title="Save video">
+            Download
           </a>
-          {% if cat == 'video' %}
-            <div style="display:flex; justify-content:center; margin-top:4px;">
-              <a href="{{ url_for('view_file') }}?path={{ f.path }}" download title="Save video">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-download" viewBox="0 0 16 16">
-                  <path d="M.5 9.9a.5.5 0 0 1 .5.5V13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2.6a.5.5 0 0 1 1 0V13a3 3 0 0 1-3 3H3a3 3 0 0 1-3-3v-2.6a.5.5 0 0 1 .5-.5z"/>
-                  <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/>
-                </svg>
-              </a>
-            </div>
-          {% else %}
-            <div style="font-size:12px">{{ f.name }}</div>
-          {% endif %}
+          <div class="file-name">{{ f.name }}</div>
         </div>
-      {% endfor %}
+      {% else %}
+        <div class="file-name">{{ f.name }}</div>
+      {% endif %}
     </div>
-  {% endif %}
+  {% endfor %}
+</div>
+
+<script src="https://unpkg.com/masonry-layout@4/dist/masonry.pkgd.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const catGrid = document.getElementById('catGrid');
+  // initialize masonry
+  catGrid.masonry = new Masonry(catGrid, {
+    itemSelector: '.masonry-item',
+    columnWidth: 160,
+    gutter: 16,
+    percentPosition: true
+  });
+
+  // Lazy load thumbnails with IntersectionObserver
+  const lazyThumbs = document.querySelectorAll('.lazy-thumb');
+  if ('IntersectionObserver' in window) {
+    const observer = new IntersectionObserver((entries, obs) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const img = entry.target;
+          if (img.dataset.src) {
+            img.src = img.dataset.src;
+            img.removeAttribute('data-src');
+          }
+          obs.unobserve(img);
+        }
+      });
+    }, { rootMargin: '200px', threshold: 0.01 });
+    lazyThumbs.forEach(img => observer.observe(img));
+  } else {
+    // fallback
+    lazyThumbs.forEach(img => {
+      if (img.dataset.src) {
+        img.src = img.dataset.src;
+        img.removeAttribute('data-src');
+      }
+    });
+  }
+
+  // ensure layout after lazy loads (some images set src later)
+  let updateCount = 0;
+  function relayoutDeferred() {
+    updateCount++;
+    setTimeout(() => {
+      if (catGrid.masonry) catGrid.masonry.layout();
+      updateCount = Math.max(0, updateCount-1);
+    }, 120);
+  }
+  // observe image load to relayout
+  document.querySelectorAll('.masonry-item img').forEach(img => {
+    img.addEventListener('load', relayoutDeferred);
+  });
+
+  // initial layout
+  setTimeout(() => { if (catGrid.masonry) catGrid.masonry.layout(); }, 100);
+});
+</script>
 {% endblock %}

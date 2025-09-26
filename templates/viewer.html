@@ -1,9 +1,117 @@
 {% extends "base.html" %}
 {% block content %}
-  <div>
-    <img src="{{ url_for('media') }}?path={{ file_path | urlencode }}" style="max-width:100%;height:auto;">
-    <div class="mt-2">
-      <a href="{{ url_for('media') }}?path={{ file_path | urlencode }}" class="btn btn-sm btn-secondary" target="_blank">Open original</a>
+<style>
+.viewer-wrap { display:flex; flex-direction:column; gap:12px; padding:16px; align-items:center; }
+.media-frame { max-width:100%; width:900px; background:#000; border-radius:8px; overflow:hidden; }
+.controls-row { display:flex; justify-content:space-between; align-items:center; width:100%; max-width:900px; gap:8px; }
+.controls-row .left, .controls-row .right { display:flex; gap:8px; align-items:center; }
+.btn-small { font-size:0.85rem; padding:6px 8px; }
+@media (max-width:960px) {
+  .media-frame, .controls-row { width:100%; }
+}
+.info { color:#666; font-size:13px; max-width:900px; word-break:break-all; text-align:left; }
+.debug-url { font-size:12px; color:#333; background:#f7f7f7; padding:6px 8px; border-radius:6px; margin-top:6px; }
+</style>
+
+<div class="viewer-wrap">
+  <div class="controls-row">
+    <div class="left">
+      <a class="btn btn-outline-secondary btn-small" href="{{ url_for('index') }}">← Back</a>
+    </div>
+    <div class="right">
+      <a class="btn btn-primary btn-small" href="{{ url_for('view_file') }}?path={{ file_path | urlencode }}&download=1">Download</a>
+      <button id="toggleNoRange" class="btn btn-outline-secondary btn-small" type="button">Use full-file stream</button>
     </div>
   </div>
+
+  {% if is_video %}
+    <div class="media-frame">
+      <!-- NOTE: preload=auto encourages the browser to request the file's metadata -->
+      <video id="player" controls preload="auto" style="width:100%;height:auto;display:block;background:#000;">
+        <!-- we'll set the source in JS to guarantee it is applied and logged -->
+        <source id="playerSource" type="{{ mime_type }}">
+        Your browser does not support the video tag.
+      </video>
+    </div>
+
+    <div class="info">
+      <div><strong>File:</strong> {{ file_path }}</div>
+      <div id="urlDebug" class="debug-url">Media URL: (not set yet)</div>
+      {% if orig_time %}
+        <div><strong>Original time (EXIF):</strong> {{ orig_time }}</div>
+      {% endif %}
+    </div>
+  {% else %}
+    <div style="max-width:900px; width:100%;">
+      <div class="media-frame" style="background:transparent; padding:12px; display:flex; justify-content:center; align-items:center;">
+        <img src="{{ url_for('media') }}?path={{ file_path | urlencode }}" style="max-width:100%; height:auto; border-radius:6px;" alt="Image">
+      </div>
+      <div class="mt-2">
+        <a class="btn btn-sm btn-secondary" href="{{ url_for('media') }}?path={{ file_path | urlencode }}" target="_blank">Open original</a>
+        <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('view_file') }}?path={{ file_path | urlencode }}&download=1">Download</a>
+      </div>
+    </div>
+  {% endif %}
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const baseMediaUrl = "{{ url_for('media') }}?path={{ file_path | urlencode }}";
+  const player = document.getElementById('player');
+  const playerSource = document.getElementById('playerSource');
+  const urlDebug = document.getElementById('urlDebug');
+  const toggleBtn = document.getElementById('toggleNoRange');
+
+  let noRange = false;
+
+  function applySource() {
+    if (!player || !playerSource) return;
+    const newUrl = noRange ? (baseMediaUrl + '&no_range=1') : baseMediaUrl;
+    // set src attribute on source element (this doesn't auto-reload in all browsers)
+    playerSource.src = newUrl;
+    // update debug display (decoded for readability)
+    try {
+      urlDebug.textContent = "Media URL: " + decodeURIComponent(newUrl);
+    } catch (e) {
+      urlDebug.textContent = "Media URL: " + newUrl;
+    }
+    console.info('[viewer] setting player source to:', newUrl);
+    // force the player to reload the source
+    player.pause();
+    player.load();
+    // try autoplay (may be blocked), harmless if blocked
+    player.play().catch(err => {
+      // not an error — autoplay blocked in many browsers
+      console.debug('Autoplay start blocked:', err);
+    });
+  }
+
+  // toggle button behavior
+  if (toggleBtn) {
+    toggleBtn.addEventListener('click', function() {
+      noRange = !noRange;
+      toggleBtn.textContent = noRange ? 'Using full-file stream' : 'Use full-file stream';
+      applySource();
+    });
+  }
+
+  // show initial url and apply source (this forces a network request)
+  applySource();
+
+  // logging and debugging listeners
+  if (player) {
+    player.addEventListener('waiting', () => console.debug('video waiting/buffering'));
+    player.addEventListener('stalled', () => console.debug('video stalled'));
+    player.addEventListener('canplay', () => console.debug('video canplay'));
+    player.addEventListener('error', (e) => {
+      console.error('video element error event:', e);
+    });
+  }
+
+  // Extra: if the source element was already present with src, log it
+  if (playerSource && playerSource.src) {
+    console.info('playerSource.src initial:', playerSource.src);
+  }
+});
+</script>
 {% endblock %}
